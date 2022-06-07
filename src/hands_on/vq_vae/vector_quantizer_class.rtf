@@ -1,0 +1,115 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2638
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fnil\fcharset0 Menlo-Regular;\f1\fnil\fcharset0 Menlo-Italic;\f2\fnil\fcharset0 Menlo-Bold;
+}
+{\colortbl;\red255\green255\blue255;\red245\green92\blue112;\red27\green31\blue35;\red163\green122\blue236;
+\red199\green203\blue209;\red131\green139\blue148;\red104\green167\blue255;\red211\green232\blue255;\red253\green154\blue93;
+}
+{\*\expandedcolortbl;;\csgenericrgb\c96078\c36078\c43922;\csgenericrgb\c10588\c12157\c13725;\csgenericrgb\c63922\c47843\c92549;
+\csgenericrgb\c78039\c79608\c81961;\csgenericrgb\c51373\c54510\c58039;\csgenericrgb\c40784\c65490\c100000;\csgenericrgb\c82745\c90980\c100000;\csgenericrgb\c99216\c60392\c36471;
+}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf2 \cb3 class \cf4 VectorQuantizer\cf5 (nn.Module)\cf2 :\
+    
+\f1\i \cf6 """\
+    This layer takes a tensor to be quantized. The channel dimension will be used as the space in which to quantize.\
+    All other dimensions will be flattened and will be seen as different examples to quantize.\
+\
+    The output tensor will have the same shape as the input.\
+\
+    As an example for a BCHW tensor of shape [16, 64, 32, 32], we will first convert it to an BHWC tensor of shape\
+    [16, 32, 32, 64] and then reshape it into [16384, 64] and all 16384 vectors of size 64 will be quantized independently.\
+    In otherwords, the channels are used as the space D in which to quantize.\
+\
+    All other dimensions will be flattened and be seen as different examples to quantize, 16384 in this case.\
+    """\
+\
+    
+\f0\i0 \cf2 def \cf7 __init__\cf5 (
+\f1\i \cf8 self
+\f0\i0 \cf5 ,\
+                 \cf9 num_embeddings\cf2 : \cf7 int\cf5 ,\
+                 \cf9 embedding_dim\cf2 : \cf7 int\cf5 ,\
+                 \cf9 beta\cf2 : \cf7 float \cf2 = \cf7 0.25\cf5 )\cf2 :\
+        \cf7 super\cf5 (VectorQuantizer, 
+\f1\i \cf8 self
+\f0\i0 \cf5 ).\cf4 __init__\cf5 ()\
+        
+\f1\i \cf8 self
+\f0\i0 \cf5 .K \cf2 = \cf9 num_embeddings \cf6 # number of embeddings > number of vectors in the codebook\
+        
+\f1\i \cf8 self
+\f0\i0 \cf5 .D \cf2 = \cf9 embedding_dim \cf6 # dimension of each embedding vector (here corresponds to the channel of image)\
+        
+\f1\i \cf8 self
+\f0\i0 \cf5 .beta \cf2 = \cf9 beta\
+\
+        
+\f1\i \cf8 self
+\f0\i0 \cf5 .embedding \cf2 = \cf5 nn.\cf4 Embedding\cf5 (
+\f1\i \cf8 self
+\f0\i0 \cf5 .K, 
+\f1\i \cf8 self
+\f0\i0 \cf5 .D) \cf6 # K embedding vector each of D dimension\
+        
+\f1\i \cf8 self
+\f0\i0 \cf5 .embedding.weight.data.\cf4 uniform_\cf5 (\cf2 -\cf7 1 \cf2 / 
+\f1\i \cf8 self
+\f0\i0 \cf5 .K, \cf7 1 \cf2 / 
+\f1\i \cf8 self
+\f0\i0 \cf5 .K) \cf6 # prior for z 
+\f2\b \cf7 todo here we want to introduce the prior from hte particles\
+\
+    
+\f0\b0 \cf2 def \cf4 forward\cf5 (
+\f1\i \cf8 self
+\f0\i0 \cf5 , \cf9 latents\cf2 : Tensor\cf5 ) -> \cf2 Tensor:\
+        \cf5 latents \cf2 = \cf9 latents\cf5 .\cf4 permute\cf5 (\cf7 0\cf5 , \cf7 2\cf5 , \cf7 3\cf5 , \cf7 1\cf5 ).\cf4 contiguous\cf5 ()  \cf6 # [B x D x H x W] -> [B x H x W x D], contiguous() allow the to memorize tensor in contigue cell of low level memory\
+        \cf5 latents_shape \cf2 = \cf9 latents\cf5 .shape\
+\
+        flat_latents \cf2 = \cf9 latents\cf5 .\cf4 view\cf5 (\cf2 -\cf7 1\cf5 , 
+\f1\i \cf8 self
+\f0\i0 \cf5 .D)  \cf6 # flatten input to [BHW x D]\
+\
+        # Compute L2 distance sum_i_n (x1 - x2)^2 between latents and embeddings weights, we are creating a matrix of BHW row and K column\
+        # where each row containes the distances from one latent vector from all embedding vectors.\
+        \cf5 dist \cf2 = \cf5 torch.\cf4 sum\cf5 (flat_latents \cf2 ** \cf7 2\cf5 , \cf9 dim\cf2 =\cf7 1\cf5 , \cf9 keepdim\cf2 =True\cf5 ) \cf2 + \cf5 \\\
+               torch.\cf4 sum\cf5 (
+\f1\i \cf8 self
+\f0\i0 \cf5 .embedding.weight \cf2 ** \cf7 2\cf5 , \cf9 dim\cf2 =\cf7 1\cf5 ) \cf2 - \cf5 \\\
+               \cf7 2 \cf2 * \cf5 torch.\cf4 matmul\cf5 (flat_latents, 
+\f1\i \cf8 self
+\f0\i0 \cf5 .embedding.weight.\cf4 t\cf5 ())  \cf6 # [BHW x K]\
+\
+        # Get the encoding that has the min distance from each encoded/latent vector\
+        \cf5 encoding_inds \cf2 = \cf5 torch.\cf4 argmin\cf5 (dist, \cf9 dim\cf2 =\cf7 1\cf5 ).\cf4 unsqueeze\cf5 (\cf7 1\cf5 )  \cf6 # [BHW, 1]\
+\
+        # Convert to one-hot encodings\
+        \cf5 device \cf2 = \cf9 latents\cf5 .device\
+        encoding_one_hot \cf2 = \cf5 torch.\cf4 zeros\cf5 (encoding_inds.\cf4 size\cf5 (\cf7 0\cf5 ), 
+\f1\i \cf8 self
+\f0\i0 \cf5 .K, \cf9 device\cf2 =\cf5 device)  \cf6 # [BHW, K]\
+        \cf5 encoding_one_hot.\cf4 scatter_\cf5 (\cf7 1\cf5 , encoding_inds, \cf7 1\cf5 )  \cf6 # [BHW x K]\
+\
+        # Quantize the latents\
+        \cf5 quantized_latents \cf2 = \cf5 torch.\cf4 matmul\cf5 (encoding_one_hot, 
+\f1\i \cf8 self
+\f0\i0 \cf5 .embedding.weight)  \cf6 # [BHW, D]\
+        \cf5 quantized_latents \cf2 = \cf5 quantized_latents.\cf4 view\cf5 (latents_shape)  \cf6 # [B x H x W x D]\
+\
+        # Compute the VQ Losses\
+        \cf5 commitment_loss \cf2 = \cf5 F.\cf4 mse_loss\cf5 (quantized_latents.\cf4 detach\cf5 (), \cf9 latents\cf5 )\
+        embedding_loss \cf2 = \cf5 F.\cf4 mse_loss\cf5 (quantized_latents, \cf9 latents\cf5 .\cf4 detach\cf5 ())\
+        vq_loss \cf2 = \cf5 commitment_loss \cf2 * 
+\f1\i \cf8 self
+\f0\i0 \cf5 .beta \cf2 + \cf5 embedding_loss\
+\
+        \cf6 # Add the residue back to the latents\
+        \cf5 quantized_latents \cf2 = \cf9 latents \cf2 + \cf5 (quantized_latents \cf2 - \cf9 latents\cf5 ).\cf4 detach\cf5 () \cf6 # add (quantized_latents - latents).detach() is\
+        # to copy the gradient from the input of decoder (quantized_latents) and past to the output of encoder (latents).\
+        # Note that thank to detach() (quantized_latents - latents) is exluded from the computational graph and so from\
+        # backprop, so this trick is only a way to bring the gradient to latents\
+\
+        \cf2 return \cf5 quantized_latents.\cf4 permute\cf5 (\cf7 0\cf5 , \cf7 3\cf5 , \cf7 1\cf5 , \cf7 2\cf5 ).\cf4 contiguous\cf5 (), vq_loss  \cf6 # [B x D x H x W]\
+}

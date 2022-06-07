@@ -1,0 +1,208 @@
+######## General ########
+seed: 42
+id_exp:
+
+device:
+  device_type: gpu
+  worker: cuda:0
+  gpu_num_workers: 32
+
+data:
+  image_size: 28
+  channel: 1
+  drange_net: [-1, 1]  # Dynamic range used when feeding image data to the networks.
+  dataset: mnist
+  nan_cutoff:
+  iid_classes:
+    - 0
+    - 2
+    - 3
+    - 4
+    - 6
+    - 7
+    - 8
+    - 9
+  ood_classes:
+    - 1
+    - 5
+  data_dir: "./data/data_raw"
+  interim_dir: "./data/interim"
+  model_dir: "./models"
+  reports_dir: "./reports"
+
+prerequisites:
+  model_den_cae: "./models/mnist/00001--cae.py"
+  latent_den_cae: "./data/interim/mnist/00001--cae.py"
+  model_classifiers:  "./models/mnist/00001--classifiers.py"
+  model_cnn: "./models/mnist/00001--cnn_multipatient.py" # "./models/mnist/00001--cnn.py"
+  model_gan: "./models/mnist/00006--dcgan.py" #"./models/mnist/00001--dcgan.py" # "./models/mnist/00006--dcgan.py"
+  model_inverter: "./models/mnist/00002--inverter.py"  # "./models/mnist/00003--inverter.py" # "./models/mnist/00002--inverter.py"
+  # PSO analysis
+  iid_pso_discovery: "./data/interim/00001--pso_discovery.py" # "./data/interim/00004--pso_discovery.py" # "./data/interim/00001--pso_discovery.py"
+  # PSO inverter analysis
+  ood_pso_inverter: "./data/interim/00001--pso_inverter.py/optimize_out_training" # "./data/interim/00001--pso_inverter.py" for patient 1 "./data/interim/00005--pso_inverter.py" for patient 5 OdD
+                                                            # "./data/interim/00000--pso_inverter.py" for patient 0 IiD
+
+######## PSO ANALYSIS ########
+trainer_pso_analysis:
+  clustering_algorithm: em # expectation_maximization # kmeans
+
+
+######## PSO INVERTER ########
+pso_inverter:
+  ood_patient: 1
+
+model_pso_inverter:
+  model_name: ResNet50
+
+trainer_pso_inverter:
+  batch_size: 128
+  epochs: 5
+  optimizer:
+    name: 'Adam'
+    lr: 0.0001
+    weight_decay: 0.00001
+    beta1: 0.0
+    beta2: 0.99
+    epsilon: 0.00000001
+  scheduler: # allow to change learning rate during training
+    mode: min
+    patience: 10000 # if the validation loss do not improve for x epochs, the scheduler reduces the learning rate (lr*10^-1)
+  early_stopping: 20 # early stopping for cnn
+
+  # PSO parameter
+  n_iterations: 50
+  n_particles: 256
+  dim_space: 10 # the same as the latent space of gan!
+  tolerance: 0.00001
+  w_inertia: 0.73 # 1 # 0.73
+  w_cognitive: 1.496 # 2 # 1.496
+  w_social: 1.496 # 2 # 1.496
+  std_threshold: 3 # potremmo usarla come early stopping?
+  schedule_inertia: False # if True is equal to W(i) = 0.99 * W(i - 1), with W(0) = 1 so inertia decreasing over time
+  early_stopping_pso: False
+
+  control_pso_fitness: 'optimize_in_training' # optimize_out_training
+
+
+######## INVERTER ########
+model_inverter:
+  model_name: inverter_dcgan
+  latent_space: 100
+  D_network:
+    units_disc: 64
+
+trainer_inverter:
+  epochs: 50
+  batch_size: 128
+  discriminator_optimizer:
+    name: 'Adam'
+    lr: 0.001
+    beta1: 0.5
+    beta2: 0.99
+    epsilon: 0.00000001
+  encoder_optimizer:
+    name: 'Adam'
+    lr: 0.001
+    beta1: 0.5
+    beta2: 0.99
+    epsilon: 0.00000001
+
+  training_function: 'pix_rec' # 'pix_fea_rec_adv' # pix_rec
+
+
+######## CNN ########
+model_cnn:
+  model_name: ResNet50
+  network:
+    kernel: 3
+    padding: valid
+    cnn_activation: LeakyReLU
+    cnn_initializer: glorot_normal
+
+trainer_cnn:
+  batch_size: 128
+  epochs: 100
+  optimizer:
+    name: 'Adam'
+    lr: 0.001
+    weight_decay: 0.00001
+    beta1: 0.0
+    beta2: 0.99
+    epsilon: 0.00000001
+  scheduler: # allow to change learning rate during training
+    mode: min
+    patience: 10000 # if the validation loss do not improve for x epochs, the scheduler reduces the learning rate (lr*10^-1)
+  early_stopping: 20
+
+######## PSO ANALYSIS ########
+analysis_pso:
+  type: iid # iid # ood
+
+######## PSO DISCOVERY ########
+model_pso_discovery:
+  model_name: pso
+
+trainer_pso:
+  n_iterations: 50 # 100 # 50
+  n_particles: 32 # 256 # 32
+  dim_space: 2 # the same as the latent space of gan!
+  tolerance: 0.00001
+  w_inertia: 0.73 # 1 # 0.73
+  w_cognitive: 1.496 # 2 # 1.496
+  w_social: 1.496 # 2 # 1.496
+  std_threshold: 3 # potremmo usarla come early stopping?
+  schedule_inertia: False # if True is equal to W(i) = 0.99 * W(i - 1), with W(0) = 1 so inertia decreasing over time
+  early_stopping: False
+
+######## CAE ########
+model_ae:
+  task: denoising #reconstruction
+  model_name: cae
+  resume_training: #"./models/"
+  latent_space: 10
+  noise_factor: 0.3
+
+trainer_ae:
+  batch_size: 128
+  epochs: 100
+  optimizer:
+    name: 'Adam'
+    lr: 0.001
+
+######## GAN ########
+model_gan:
+  model_name: dcgan
+  resume_training: # '.tar'
+  network:
+    units_disc: 64
+    units_gen: 64
+
+trainer_gan:
+  batch_size: 128
+  epochs: 100
+  optimizer:
+    name: 'Adam'
+    lr: 0.001
+    beta1: 0.5
+    beta2: 0.99
+    epsilon: 0.00000001
+
+  z_dim: 10 # 2
+
+  label_smoothing: True
+
+######## GAN evaluation ########
+model_classifiers:
+  model_name: classifiers
+  resume_training: #"./models/"
+
+evaluation:
+  fid:
+  is:
+  visual_layer:
+  dimensionality_reduction:
+    algorithm:
+
+
+

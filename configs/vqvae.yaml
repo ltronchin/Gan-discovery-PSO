@@ -1,0 +1,94 @@
+######## General ########
+seed: 42
+id_exp:
+
+device:
+  device_type: gpu
+  worker: cuda:0
+  gpu_num_workers: 32
+
+data:
+  image_size: 28
+  channel: 1
+  drange_net: [-1, 1]  # Dynamic range used when feeding image data to the networks.
+  drange_data:
+  dataset: mnist
+  nan_cutoff:
+  iid_classes:
+    - 0
+    - 1
+    - 2
+    - 3
+    - 6
+    - 7
+    - 8
+    - 9
+  ood_classes:
+    - 4
+    - 5
+  data_dir: "./data/data_raw"
+  interim_dir: "./data/interim"
+  model_dir: "./models"
+  reports_dir: "./reports"
+
+pretrained_input:
+  model_cnn: "./models/mnist/00001--cnn.py"
+  model_gan: "./models/mnist/00001--dcgan.py"
+  model_encoder:
+
+model:
+  task: reconstructing
+  train_inverter: True
+  model_name: vqvae
+  pretrained: #"./models/
+  latent_space:
+    embedding_dim: 100 # 64
+    num_embedding: 256 # 512 # 256 like the number of particles
+  network:
+    num_hiddens: 64
+
+trainer:
+  batch_size: 128
+  epochs: 100
+  beta: 0.25
+  optimizer:
+    name: 'Adam'
+    lr: 0.0002 # 0.001 # 0.0002
+
+######## GAN ########
+model_gan:
+  model_name: dcgan
+  resume_training: # '.tar'
+  network:
+    units_disc: 64
+    units_gen: 64
+
+trainer_gan:
+  batch_size: 128
+  epochs: 100
+  optimizer:
+    name: 'Adam'
+    lr: 0.001
+    beta1: 0.5
+    beta2: 0.99
+    epsilon: 0.00000001
+  z_dim: 100
+  label_smoothing: True
+
+######## Pso discovery ########
+model_pso_discovery:
+  model_name: pso
+
+trainer_pso:
+  n_iterations: 50
+  n_particles: 32
+  dim_space: 100
+  tolerance: 0.00001
+  w_inertia: 1 # 0.73
+  w_cognitive: 2 # 1.496
+  w_social: 2 # 1.496
+  std_threshold: 3
+  schedule_inertia: True
+  early_stopping: True
+
+
