@@ -182,14 +182,11 @@ print("Start analysis")
 data, label_iid = util_pso_analysis.upload_pso_particles(path_dir=iid_pso_discovery_dir, n_particles=cfg['trainer_pso']['n_particles'], latent_dim=latent_dim, patient_classes=iid_class)
 data_ood, label_ood = util_pso_analysis.upload_pso_particles(path_dir=ood_pso_inverter_dir, n_particles=cfg['trainer_pso_inverter']['n_particles'], latent_dim=latent_dim, patient_classes=[ood_patient], analysis='ood')
 
-preds = util_general.list_dict()
-
 model= util_pso_analysis.get_clustering_algorithm(model_name=clustering_algorithm, data=data, data_iid_label=label_iid, n_components = data.shape[1], dim_red_algorithm='no_transformation')
 with open(os.path.join(model_dir, f'{clustering_algorithm}.pkl'), 'wb') as f:
     pickle.dump(model, f)
 if data.shape[1]==2 and clustering_algorithm == 'em':
     util_latent_analysis.plot_ellipsoids(plot_training_dir=plot_training_dir, X=data, Y_=model.predict(data), means=model.means_, covariances=model.covariances_, dim_red_algorithm="Gaussian Mixture")
-
 
 for dim_red_algorithm in ['pca', 'umap']:
     print(dim_red_algorithm)
@@ -204,13 +201,61 @@ for dim_red_algorithm in ['pca', 'umap']:
     for label in [ood_patient]: # per label
         label_ood = str(label)
         print(f"ood_class:{label_ood}")
-        if len(preds) < len([ood_patient]):
-            preds[label] = model.predict(data_ood.astype('double')) # todo il modello di clustering mi dice la gaussiana/cluster di appartenza. Non mi dice la classe iid!
         reduced_data_ood = reducer.transform(data_ood)
         util_latent_analysis.plot_latent_space(plot_training_dir=plot_training_dir, data_iid=reduced_data_iid,   data_iid_label=label_iid, data_ood=reduced_data_ood, data_ood_label=label_ood,  dim_reduction_algorithm=dim_red_algorithm)
 
-# todo inizializzazione in base alla media delle particelle iid https://scikit-learn.org/stable/auto_examples/mixture/plot_gmm_covariances.html#sphx-glr-auto-examples-mixture-plot-gmm-covariances-py
+
+from sklearn.mixture import GaussianMixture
+from sklearn.model_selection import StratifiedKFold
+
+class_to_idx = {c: i for i, c in enumerate(sorted(iid_class))}
+idx_to_class = {i: c for c, i in class_to_idx.items()}
+
+skf = StratifiedKFold(n_splits=2)
+train_index, test_index = next(iter(skf.split(data, label_iid)))
+
+data = data.to_numpy()
+X_train = data[train_index]
+y_train = label_iid[train_index]
+X_test = data[test_index]
+y_test = label_iid[test_index]
+
+n_classes = len(np.unique(y_train))
+
+estimator = GaussianMixture(n_components=len(iid_class), covariance_type='tied', max_iter=2000, random_state=42)
+estimator.means_init = np.array(
+        [X_train[y_train == i].mean(axis=0) for i in iid_class
+         ]
+    )
+
+# Train the other parameters using the EM algorithm.
+estimator.fit(X_train)
+
+y_train_pred = estimator.predict(X_train)
+y_train_pred = np.asarray([idx_to_class[p] for p in y_train_pred])
+train_accuracy = np.mean(y_train_pred.ravel() == y_train.ravel()) * 100
+print(f'Train iid accuracy: {train_accuracy}%')
+
+y_test_pred = estimator.predict(X_test)
+y_test_pred = np.asarray([idx_to_class[p] for p in y_test_pred])
+test_accuracy = np.mean(y_test_pred.ravel() == y_test.ravel()) * 100
+print(f'Test iid accuracy: {test_accuracy}%')
+
+print(f'Distribution OoD patient: {ood_patient}')
+ood_pred = estimator.predict(data_ood)
+ood_pred = np.asarray([idx_to_class[p] for p in ood_pred])
+
+fig = plt.figure()
+
+preds_per_iid_class = [np.sum(ood_pred == iid).astype('uint8') for iid in iid_class]
+print(f"ood_class: {preds_per_iid_class}")
+plt.plot(preds_per_iid_class, marker='o', label=ood_patient)
+plt.xticks(np.arange(len(iid_class)), iid_class)
+plt.xlabel("iid classes")
+plt.ylabel("Number of ood images predicted per iid class")
+plt.legend()
+fig.savefig(os.path.join(general_reports_dir, "ood_img.png"), dpi=400, format='png')
+plt.show()
 
 # Defining the run: save time and history
 print("May be the force with you!")
-

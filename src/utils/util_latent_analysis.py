@@ -195,11 +195,10 @@ def plot_latent_space(plot_training_dir, data_iid, data_iid_label, centroids=Non
     plt.title(fig_title)
     plt.xlabel(fig_xlabel)
     plt.ylabel(fig_ylabel)
-    plt.savefig(os.path.join(plot_training_dir, fig_savename+".png"), dpi=400,  format='png')
-    plt.show()
+    fig.savefig(os.path.join(plot_training_dir, fig_savename+".png"), dpi=400,  format='png')
+    fig.show()
 
-
-def plot_ellipsoids(plot_training_dir, X, Y_, means, covariances, dim_red_algorithm=None):
+def plot_ellipsoids(plot_training_dir, X, Y_, means, covariances, covariance_type='tied', dim_red_algorithm=None): # todo check plot for workstation
 
     if dim_red_algorithm is not None:
         fig_title= f"{dim_red_algorithm} Gaussian Mixture"
@@ -212,7 +211,7 @@ def plot_ellipsoids(plot_training_dir, X, Y_, means, covariances, dim_red_algori
         fig_ylabel = 'Z_2'
         fig_savename = "ellipsoid"
 
-
+    fig = plt.figure(figsize=[8, 6])
     if isinstance(X, pd.DataFrame):
         X = X.to_numpy()
 
@@ -221,6 +220,7 @@ def plot_ellipsoids(plot_training_dir, X, Y_, means, covariances, dim_red_algori
          "deepskyblue"])
     splot = plt.subplot(1, 1, 1)
     for i, (mean, covar, color) in enumerate(zip(means, covariances, color_iter)):
+
         v, w = linalg.eigh(covar)
         v = 2.0 * np.sqrt(2.0) * np.sqrt(v)
         u = w[0] / linalg.norm(w[0])
@@ -239,8 +239,8 @@ def plot_ellipsoids(plot_training_dir, X, Y_, means, covariances, dim_red_algori
     plt.title(fig_title)
     plt.xlabel(fig_xlabel)
     plt.ylabel(fig_ylabel)
-    plt.savefig(os.path.join(plot_training_dir, fig_savename+".png"), dpi=400,  format='png')
-    plt.show()
+    fig.savefig(os.path.join(plot_training_dir, fig_savename+".png"), dpi=400,  format='png')
+    fig.show()
 
 def kmeans_fun(data, data_iid_label, n_components = 2, dim_red_algorithm='pca'):
     if dim_red_algorithm == 'pca':
@@ -273,6 +273,11 @@ def get_initial_means(X, n_components, init_params, random_state):     # Run a G
     gmm = GaussianMixture(n_components=n_components, init_params=init_params, tol=1e-9, max_iter=1, random_state=random_state).fit(X)
     return gmm.means_
 
+def get_initial_means_supervised(estimator, X, Y):
+    estimator.means_init = np.array(
+        [X[Y == i].mean(axis=0) for i in np.unique(Y)]
+    )
+
 def em_fun(data, data_iid_label, n_components = 2, dim_red_algorithm='pca'):
     if dim_red_algorithm == 'pca':
         # Dim reduction
@@ -280,20 +285,25 @@ def em_fun(data, data_iid_label, n_components = 2, dim_red_algorithm='pca'):
         pca.fit(data)
         reduced_data = pca.transform(data)
         # Clustering
-        gmm = GaussianMixture(n_components=len(np.unique(data_iid_label)), means_init=get_initial_means(X=reduced_data.astype('double'), n_components=len(np.unique(data_iid_label)), init_params="k-means++", random_state=42), tol=1e-9, max_iter=2000, random_state=42)
+        gmm = GaussianMixture(n_components=len(np.unique(data_iid_label)), max_iter=2000, random_state=42)
+        gmm.means_init = get_initial_means_supervised(estimator=gmm, X=reduced_data, Y=data_iid_label)
         gmm.fit(reduced_data.astype('double'))
         return gmm, pca, reduced_data
+
     elif dim_red_algorithm == 'umap':
         # Dim reduction
         reducer =  umap.UMAP(n_components=n_components, random_state=42)
         reducer.fit(data)
         reduced_data = reducer.transform(data)
         # Clustering
-        gmm = GaussianMixture(n_components=len(np.unique(data_iid_label)), means_init=get_initial_means(X=reduced_data.astype('double'), n_components=len(np.unique(data_iid_label)), init_params="k-means++", random_state=42), tol=1e-9, max_iter=2000, random_state=42)
+        gmm = GaussianMixture(n_components=len(np.unique(data_iid_label)), max_iter=2000, random_state=42)
+        gmm.means_init = get_initial_means_supervised(estimator=gmm, X=reduced_data, Y=data_iid_label)
         gmm.fit(reduced_data.astype('double'))
         return gmm, reducer, reduced_data
+
     elif dim_red_algorithm == 'no_transformation':
-        gmm = GaussianMixture(n_components=len(np.unique(data_iid_label)), means_init=get_initial_means(X=data.astype('double'), n_components=len(np.unique(data_iid_label)), init_params="k-means++", random_state=42), tol=1e-9, max_iter=2000, random_state=42)
+        gmm = GaussianMixture(n_components=len(np.unique(data_iid_label)), max_iter=2000, random_state=42)
+        gmm.means_init = get_initial_means_supervised(estimator=gmm, X=data, Y=data_iid_label) #  gmm.means_init = get_initial_means(X=data.astype('double'), n_components=len(np.unique(data_iid_label)), init_params="k-means++", random_state=42)
         gmm.fit(data.astype('double'))
         return gmm
     else:
